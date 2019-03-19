@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -83,35 +84,41 @@ func pathExists(path string) (bool, error) {
 }
 
 func main() {
-	fmt.Printf("Importing files from %s to %s\n", os.Args[1], os.Args[2])
+	var src, dest, fileType string
+	flag.StringVar(&src, "src", "", "Source path")
+	flag.StringVar(&dest, "dest", "", "Destination path")
+	flag.StringVar(&fileType, "type", "", "File type")
 
-	// Parse minimum timestamp from arguments
-	minTimestamp, err := strconv.ParseInt(os.Args[3], 10, 64)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(minTimestamp)
+	var minTime, maxTime int
+	flag.IntVar(&minTime, "min", 0, "Start date")
+	flag.IntVar(&maxTime, "max", 0, "End date")
+	flag.Parse()
 
 	// Read the directory
-	files, err := ioutil.ReadDir(os.Args[1])
+	fmt.Printf("Importing files from %s to %s\n", src, dest)
+	files, err := ioutil.ReadDir(src)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, f := range files {
-		// fmt.Println(f.Name())
+		fmt.Printf("\nNew file --> %s\n", f.Name())
 		timestamp := f.ModTime().Format("2006-01-02")
 		timestampValue := f.ModTime().Format("20060102")
-		i, _ := strconv.ParseInt(timestampValue, 10, 64)
+		i, _ := strconv.Atoi(timestampValue)
 		fmt.Printf("Timestamp: %d\n", i)
-		if i < minTimestamp {
-			fmt.Println("Skipping...")
+		if i < minTime || i > maxTime {
+			fmt.Println("Skipping (timestamp) ...")
 			continue
 		}
 
 		// Create folder if needed
-		ext := strings.ToLower(strings.Trim(filepath.Ext(f.Name()), "."))
-		folder := filepath.Join(os.Args[2], timestamp+"-"+ext)
+		ext := strings.Trim(filepath.Ext(f.Name()), ".")
+		if fileType != "" && ext != fileType {
+			fmt.Printf("Skipping (filetype): %s vs. %s\n", ext, fileType)
+			continue
+		}
+		folder := filepath.Join(dest, timestamp+"-"+strings.ToLower(ext))
 		if value, err := pathExists(folder); value == false && err == nil {
 			fmt.Printf("Creating folder: %s\n", folder)
 			os.Mkdir(folder, 0755)
@@ -120,10 +127,10 @@ func main() {
 		}
 
 		// Copy the file
-		src := filepath.Join(os.Args[1], f.Name())
-		dest := filepath.Join(folder, f.Name())
-		fmt.Printf("Copying %s to %s\n", src, dest)
-		err := copyFile(src, dest)
+		srcFile := filepath.Join(src, f.Name())
+		destFile := filepath.Join(folder, f.Name())
+		fmt.Printf("Copying %s to %s\n", srcFile, destFile)
+		err := copyFile(srcFile, destFile)
 		if err != nil {
 			fmt.Printf("Copy file failed %q\n", err)
 		} else {
