@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Copy a file from src to dst.
+// Copy a file from src to dst
 func copyFile(src, dst string) (err error) {
 	sfi, err := os.Stat(src)
 	if err != nil {
@@ -94,7 +94,7 @@ func main() {
 	flag.IntVar(&maxTime, "max", 0, "End date")
 	flag.Parse()
 
-	// Read the directory
+	// Read the source directory
 	fmt.Printf("Importing files from %s to %s\n", src, dest)
 	files, err := ioutil.ReadDir(src)
 	if err != nil {
