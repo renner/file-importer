@@ -111,13 +111,13 @@ func main() {
 			fmt.Println("Skipping (timestamp) ...")
 			continue
 		}
-
-		// Create folder if needed
 		ext := strings.Trim(filepath.Ext(f.Name()), ".")
 		if filter != "" && ext != filter {
 			fmt.Printf("Skipping (filter): %s vs. %s\n", ext, filter)
 			continue
 		}
+
+		// Create folder if needed
 		folder := filepath.Join(to, timestamp+"-"+strings.ToLower(ext))
 		if value, err := pathExists(folder); value == false && err == nil {
 			fmt.Printf("Creating folder: %s\n", folder)
