@@ -95,25 +95,23 @@ func main() {
 	flag.Parse()
 
 	// Read the source directory
-	fmt.Printf("Importing files from %s to %s\n", from, to)
+	fmt.Printf("Importing files from %s -> %s\n", from, to)
 	files, err := ioutil.ReadDir(from)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, f := range files {
-		fmt.Printf("\nNew file --> %s\n", f.Name())
 		timestamp := f.ModTime().Format("2006-01-02")
 		timestampValue := f.ModTime().Format("20060102")
 		i, _ := strconv.Atoi(timestampValue)
-		fmt.Printf("Timestamp: %d\n", i)
+
+		// Check skipping conditions
 		if i < start || i > end {
-			fmt.Println("Skipping (timestamp) ...")
 			continue
 		}
 		ext := strings.Trim(filepath.Ext(f.Name()), ".")
 		if filter != "" && ext != filter {
-			fmt.Printf("Skipping (filter): %s vs. %s\n", ext, filter)
 			continue
 		}
 
@@ -122,19 +120,15 @@ func main() {
 		if value, err := pathExists(folder); value == false && err == nil {
 			fmt.Printf("Creating folder: %s\n", folder)
 			os.Mkdir(folder, 0755)
-		} else {
-			fmt.Printf("Folder exists: %s\n", folder)
 		}
 
 		// Copy the file
 		fromFile := filepath.Join(from, f.Name())
 		toFile := filepath.Join(folder, f.Name())
-		fmt.Printf("Copying %s to %s\n", fromFile, toFile)
+		fmt.Printf("Copying %s -> %s\n", fromFile, toFile)
 		err := copyFile(fromFile, toFile)
 		if err != nil {
-			fmt.Printf("Copy file failed %q\n", err)
-		} else {
-			fmt.Printf("Copy file succeeded\n")
+			fmt.Printf("Copy file failed: %q\n", err)
 		}
 	}
 }
