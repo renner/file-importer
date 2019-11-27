@@ -94,6 +94,12 @@ func main() {
 	flag.IntVar(&end, "end", 0, "End date")
 	flag.Parse()
 
+	if from == "" || to == "" {
+		fmt.Fprintf(os.Stderr, "Error: Need source and target directory (use '--from' and '--to')\n\n")
+		flag.Usage()
+		os.Exit(-1)
+	}
+
 	// Read the source directory
 	fmt.Printf("Importing files from %s -> %s\n", from, to)
 	files, err := ioutil.ReadDir(from)
