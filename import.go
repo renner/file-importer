@@ -89,9 +89,9 @@ func main() {
 	flag.StringVar(&to, "to", "", "Destination path")
 	flag.StringVar(&filter, "filter", "", "Optional file type filter")
 
-	var start, end int
-	flag.IntVar(&start, "start", 0, "Start date")
-	flag.IntVar(&end, "end", 0, "End date")
+	var start, end uint
+	flag.UintVar(&start, "start", uint(0), "Start date")
+	flag.UintVar(&end, "end", ^uint(0), "End date")
 	flag.Parse()
 
 	if from == "" || to == "" {
@@ -108,20 +108,21 @@ func main() {
 	}
 
 	for _, f := range files {
-		timestamp := f.ModTime().Format("2006-01-02")
-		timestampValue := f.ModTime().Format("20060102")
-		i, _ := strconv.Atoi(timestampValue)
-
-		// Check skipping conditions
-		if i < start || i > end {
-			continue
-		}
+		// Filter for file extension
 		ext := strings.Trim(filepath.Ext(f.Name()), ".")
 		if filter != "" && ext != filter {
 			continue
 		}
 
+		// Filter for modification time
+		timestampValue := f.ModTime().Format("20060102")
+		i, _ := strconv.Atoi(timestampValue)
+		if uint(i) < start || uint(i) > end {
+			continue
+		}
+
 		// Create folder if needed
+		timestamp := f.ModTime().Format("2006-01-02")
 		folder := filepath.Join(to, timestamp+"-"+strings.ToLower(ext))
 		if value, err := pathExists(folder); value == false && err == nil {
 			fmt.Printf("Creating folder: %s\n", folder)
