@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/rwcarlsen/goexif/exif"
 	"io"
 	"io/ioutil"
 	"log"
@@ -114,9 +115,24 @@ func main() {
 			continue
 		}
 
-		// Filter for modification time
-		timestampValue := f.ModTime().Format("20060102")
-		i, _ := strconv.Atoi(timestampValue)
+		// Filter for EXIF DateTime if it exists, otherwise ModTime
+		file, err := os.Open(filepath.Join(from, f.Name()))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		timestampValue := f.ModTime()
+		fmt.Println("ModTime: ", timestampValue)
+
+		x, err := exif.Decode(file)
+		if err != nil {
+			fmt.Printf("Decode EXIF failed (%s), using ModTime\n", err)
+		} else {
+			timestampValue, _ := x.DateTime()
+			fmt.Println("DateTime (EXIF): ", timestampValue)
+		}
+
+		i, _ := strconv.Atoi(timestampValue.Format("20060102"))
 		if uint(i) < start || uint(i) > end {
 			continue
 		}
@@ -133,7 +149,7 @@ func main() {
 		fromFile := filepath.Join(from, f.Name())
 		toFile := filepath.Join(folder, f.Name())
 		fmt.Printf("Copying %s -> %s\n", fromFile, toFile)
-		err := copyFile(fromFile, toFile)
+		err = copyFile(fromFile, toFile)
 		if err != nil {
 			fmt.Printf("Copy file failed: %q\n", err)
 		}
