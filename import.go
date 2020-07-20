@@ -121,15 +121,13 @@ func main() {
 			log.Fatal(err)
 		}
 
-		timestampValue := f.ModTime()
-		fmt.Println("ModTime: ", timestampValue)
-
+		var timestampValue time.Time
 		x, err := exif.Decode(file)
 		if err != nil {
 			fmt.Printf("Decode EXIF failed (%s), using ModTime\n", err)
+			timestampValue = f.ModTime()
 		} else {
-			timestampValue, _ := x.DateTime()
-			fmt.Println("DateTime (EXIF): ", timestampValue)
+			timestampValue, _ = x.DateTime()
 		}
 
 		i, _ := strconv.Atoi(timestampValue.Format("20060102"))
@@ -148,7 +146,7 @@ func main() {
 		// Copy the file
 		fromFile := filepath.Join(from, f.Name())
 		toFile := filepath.Join(folder, f.Name())
-		fmt.Printf("Copying %s -> %s\n", fromFile, toFile)
+		fmt.Printf("Copying %s -> %s (%s)\n", fromFile, toFile, timestampValue)
 		err = copyFile(fromFile, toFile)
 		if err != nil {
 			fmt.Printf("Copy file failed: %q\n", err)
