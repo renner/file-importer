@@ -136,7 +136,7 @@ func main() {
 		}
 
 		// Create folder if needed
-		timestamp := f.ModTime().Format("2006-01-02")
+		timestamp := timestampValue.Format("2006-01-02")
 		folder := filepath.Join(to, timestamp+"-"+strings.ToLower(ext))
 		if value, err := pathExists(folder); value == false && err == nil {
 			fmt.Printf("Creating folder: %s\n", folder)
