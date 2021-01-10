@@ -109,6 +109,11 @@ func main() {
 	}
 
 	for _, f := range files {
+		// Skip directories
+		if f.IsDir() {
+			continue
+		}
+
 		// Filter for file extension
 		ext := strings.Trim(filepath.Ext(f.Name()), ".")
 		if filter != "" && ext != filter {
