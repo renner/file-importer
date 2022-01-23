@@ -21,8 +21,7 @@ func copyFile(src, dst string) (err error) {
 		return
 	}
 	if !sfi.Mode().IsRegular() {
-		// cannot copy non-regular files (e.g., directories,
-		// symlinks, devices, etc.)
+		// Cannot copy non-regular files (directories, symlinks, devices, etc.)
 		return fmt.Errorf("Non-regular source file %s (%q)", sfi.Name(), sfi.Mode().String())
 	}
 	dfi, err := os.Stat(dst)
@@ -43,7 +42,7 @@ func copyFile(src, dst string) (err error) {
 }
 
 // Copy the contents of the file named src to the file named by dst setting the given mtime. If the
-// destination file exists, all it's contents will be replaced by the contents of the source file.
+// destination file exists, all of its contents will be replaced by the contents of the source file.
 func copyFileContents(src, dst string, mtime time.Time) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
@@ -129,7 +128,7 @@ func main() {
 		var timestampValue time.Time
 		x, err := exif.Decode(file)
 		if err != nil {
-			fmt.Printf("Decode EXIF failed (%s), using ModTime\n", err)
+			fmt.Printf("No EXIF data found (%s), using ModTime\n", err)
 			timestampValue = f.ModTime()
 		} else {
 			timestampValue, _ = x.DateTime()
