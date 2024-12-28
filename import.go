@@ -85,9 +85,9 @@ func pathExists(path string) (bool, error) {
 	return true, err
 }
 
-// Convert an offset string to seconds (untested!)
+// Convert an offset string to seconds
 func offsetToSeconds(offset string) (int, error) {
-	if len(offset) != 5 {
+	if len(offset) != 6 {
 		return 0, fmt.Errorf("Invalid offset format")
 	}
 
@@ -103,7 +103,7 @@ func offsetToSeconds(offset string) (int, error) {
 		return 0, err
 	}
 
-	minutes, err := strconv.Atoi(offset[3:5])
+	minutes, err := strconv.Atoi(offset[4:6])
 	if err != nil {
 		return 0, err
 	}
