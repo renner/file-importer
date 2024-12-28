@@ -111,6 +111,22 @@ func offsetToSeconds(offset string) (int, error) {
 	return sign * (hours*3600 + minutes*60), nil
 }
 
+// Find a tag in all IFDs and return the value as a string
+func findTagInAllIfds(index *exif.IfdIndex, tagName string) (string, error) {
+	ifds := index.Ifds
+	for _, ifd := range ifds {
+		results, err := ifd.FindTagWithName(tagName)
+		if err == nil && len(results) > 0 {
+			valueRaw, err := results[0].Value()
+			if err != nil {
+				return "", err
+			}
+			return valueRaw.(string), nil
+		}
+	}
+	return "", fmt.Errorf("tag not found")
+}
+
 func main() {
 	var from, to, filter string
 	flag.StringVar(&from, "from", "", "Source path")
@@ -170,50 +186,35 @@ func main() {
 				log.Fatal(err)
 			}
 
-			results, err := index.RootIfd.FindTagWithName("DateTime")
+			// Search for DateTimeOriginal tag
+			dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
 			if err != nil {
-				fmt.Printf("Date Time - tag not found (%s), using ModTime\n", err)
+				fmt.Printf("DateTimeOriginal - tag not found (%s), using ModTime\n", err)
 				timestampValue = f.ModTime()
 			} else {
-				ite := results[0]
-
-				valueRaw, err := ite.Value()
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				dateTimeString := valueRaw.(string)
-				fmt.Printf("DateTime = %s\n", dateTimeString)
+				fmt.Printf("DateTimeOriginal = %s\n", dateTimeString)
 
 				layout := "2006:01:02 15:04:05"
 				timestampValue, err = time.Parse(layout, dateTimeString)
 				if err != nil {
 					log.Fatal(err)
 				}
-			}
 
-			// Try to determine timezone from EXIF, otherwise use local timezone
-			results, err = index.RootIfd.FindTagWithName("OffsetTime")
-			if err != nil {
-				fmt.Printf("Offset Time - tag not found (%s), using Local\n", err)
-				timestampValue = timestampValue.In(time.Local)
-			} else {
-				ite := results[0]
-
-				valueRaw, err := ite.Value()
+				// Determine corresponding timezone from EXIF or use local timezone
+				offsetString, err := findTagInAllIfds(&index, "OffsetTime")
 				if err != nil {
-					log.Fatal(err)
-				}
+					fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
+					timestampValue = timestampValue.In(time.Local)
+				} else {
+					fmt.Printf("OffsetTime = %s\n", offsetString)
 
-				offsetString := valueRaw.(string)
-				fmt.Printf("OffsetTime = %s\n", offsetString)
-
-				offsetSeconds, err := offsetToSeconds(offsetString)
-				if err != nil {
-					log.Fatal(err)
+					offsetSeconds, err := offsetToSeconds(offsetString)
+					if err != nil {
+						log.Fatal(err)
+					}
+					location := time.FixedZone("FixedZone", offsetSeconds)
+					timestampValue = timestampValue.In(location)
 				}
-				location := time.FixedZone("FixedZone", offsetSeconds)
-				timestampValue = timestampValue.In(location)
 			}
 		}
 
