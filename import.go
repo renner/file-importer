@@ -152,6 +152,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		defer file.Close()
 
 		var timestampValue time.Time
 		rawExif, err := exif.SearchAndExtractExifWithReader(file)
