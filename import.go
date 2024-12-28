@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/rwcarlsen/goexif/exif"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,6 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dsoprea/go-exif/v3"
+	exifcommon "github.com/dsoprea/go-exif/v3/common"
 )
 
 // Copy a file from src to dst
@@ -83,6 +85,32 @@ func pathExists(path string) (bool, error) {
 	return true, err
 }
 
+// Convert an offset string to seconds (untested!)
+func offsetToSeconds(offset string) (int, error) {
+	if len(offset) != 5 {
+		return 0, fmt.Errorf("Invalid offset format")
+	}
+
+	sign := 1
+	if offset[0] == '-' {
+		sign = -1
+	} else if offset[0] != '+' {
+		return 0, fmt.Errorf("Invalid offset format")
+	}
+
+	hours, err := strconv.Atoi(offset[1:3])
+	if err != nil {
+		return 0, err
+	}
+
+	minutes, err := strconv.Atoi(offset[3:5])
+	if err != nil {
+		return 0, err
+	}
+
+	return sign * (hours*3600 + minutes*60), nil
+}
+
 func main() {
 	var from, to, filter string
 	flag.StringVar(&from, "from", "", "Source path")
@@ -126,12 +154,66 @@ func main() {
 		}
 
 		var timestampValue time.Time
-		x, err := exif.Decode(file)
+		rawExif, err := exif.SearchAndExtractExifWithReader(file)
 		if err != nil {
 			fmt.Printf("No EXIF data found (%s), using ModTime\n", err)
 			timestampValue = f.ModTime()
 		} else {
-			timestampValue, _ = x.DateTime()
+			im, err := exifcommon.NewIfdMappingWithStandard()
+			if err != nil {
+				log.Fatal(err)
+			}
+			ti := exif.NewTagIndex()
+			_, index, err := exif.Collect(im, ti, rawExif)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			results, err := index.RootIfd.FindTagWithName("DateTime")
+			if err != nil {
+				fmt.Printf("Date Time - tag not found (%s), using ModTime\n", err)
+				timestampValue = f.ModTime()
+			} else {
+				ite := results[0]
+
+				valueRaw, err := ite.Value()
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				dateTimeString := valueRaw.(string)
+				fmt.Printf("DateTime = %s\n", dateTimeString)
+
+				layout := "2006:01:02 15:04:05"
+				timestampValue, err = time.Parse(layout, dateTimeString)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+
+			// Try to determine timezone from EXIF, otherwise use local timezone
+			results, err = index.RootIfd.FindTagWithName("OffsetTime")
+			if err != nil {
+				fmt.Printf("Offset Time - tag not found (%s), using Local\n", err)
+				timestampValue = timestampValue.In(time.Local)
+			} else {
+				ite := results[0]
+
+				valueRaw, err := ite.Value()
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				offsetString := valueRaw.(string)
+				fmt.Printf("OffsetTime = %s\n", offsetString)
+
+				offsetSeconds, err := offsetToSeconds(offsetString)
+				if err != nil {
+					log.Fatal(err)
+				}
+				location := time.FixedZone("FixedZone", offsetSeconds)
+				timestampValue = timestampValue.In(location)
+			}
 		}
 
 		i, _ := strconv.Atoi(timestampValue.Format("20060102"))
