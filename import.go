@@ -173,8 +173,8 @@ func main() {
 		var timestampValue time.Time
 		rawExif, err := exif.SearchAndExtractExifWithReader(file)
 		if err != nil {
-			fmt.Printf("No EXIF data found (%s), using ModTime\n", err)
-			timestampValue = f.ModTime()
+			fmt.Printf("%s: No EXIF data found (%s), using ModTime\n", f.Name(), err)
+			timestampValue = f.ModTime().In(time.UTC)
 		} else {
 			im, err := exifcommon.NewIfdMappingWithStandard()
 			if err != nil {
@@ -189,10 +189,10 @@ func main() {
 			// Search for DateTimeOriginal tag
 			dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
 			if err != nil {
-				fmt.Printf("DateTimeOriginal - tag not found (%s), using ModTime\n", err)
-				timestampValue = f.ModTime()
+				fmt.Printf("%s: DateTimeOriginal not found (%s), using ModTime\n", f.Name(), err)
+				timestampValue = f.ModTime().In(time.UTC)
 			} else {
-				fmt.Printf("DateTimeOriginal = %s\n", dateTimeString)
+				fmt.Printf("%s: DateTimeOriginal = %s\n", f.Name(), dateTimeString)
 
 				layout := "2006:01:02 15:04:05"
 				timestampValue, err = time.Parse(layout, dateTimeString)
