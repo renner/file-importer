@@ -201,20 +201,20 @@ func main() {
 				}
 
 				// Determine corresponding timezone from EXIF or use local timezone
-				offsetString, err := findTagInAllIfds(&index, "OffsetTime")
-				if err != nil {
-					fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
-					timestampValue = timestampValue.In(time.Local)
-				} else {
-					fmt.Printf("OffsetTime = %s\n", offsetString)
+				// offsetString, err := findTagInAllIfds(&index, "OffsetTime")
+				// if err != nil {
+				// 	fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
+				// 	timestampValue = timestampValue.In(time.Local)
+				// } else {
+				// 	fmt.Printf("OffsetTime = %s\n", offsetString)
 
-					offsetSeconds, err := offsetToSeconds(offsetString)
-					if err != nil {
-						log.Fatal(err)
-					}
-					location := time.FixedZone("FixedZone", offsetSeconds)
-					timestampValue = timestampValue.In(location)
-				}
+				// 	offsetSeconds, err := offsetToSeconds(offsetString)
+				// 	if err != nil {
+				// 		log.Fatal(err)
+				// 	}
+				// 	location := time.FixedZone("FixedZone", offsetSeconds)
+				// 	timestampValue = timestampValue.In(location)
+				// }
 			}
 		}
 
