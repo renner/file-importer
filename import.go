@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dsoprea/go-exif/v3"
@@ -151,6 +152,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Create a channel to distribute the work
+	fileChan := make(chan os.FileInfo, len(files))
+	var wg sync.WaitGroup
+
+	// Limit the number of concurrent goroutines
+	const maxGoroutines = 10
+	guard := make(chan struct{}, maxGoroutines)
+
 	for _, f := range files {
 		// Skip directories
 		if f.IsDir() {
@@ -163,81 +172,97 @@ func main() {
 			continue
 		}
 
-		// Filter for EXIF DateTime if it exists, otherwise ModTime
-		file, err := os.Open(filepath.Join(from, f.Name()))
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer file.Close()
+		fileChan <- f
+	}
+	close(fileChan)
 
-		var timestampValue time.Time
-		rawExif, err := exif.SearchAndExtractExifWithReader(file)
-		if err != nil {
-			fmt.Printf("%s: No EXIF data found (%s), using ModTime\n", f.Name(), err)
-			timestampValue = f.ModTime().In(time.UTC)
-		} else {
-			im, err := exifcommon.NewIfdMappingWithStandard()
+	for f := range fileChan {
+		ext := strings.Trim(filepath.Ext(f.Name()), ".")
+		wg.Add(1)
+		guard <- struct{}{} // Block if guard channel is full
+
+		go func(f os.FileInfo, ext string) {
+			defer wg.Done()
+			defer func() { <-guard }() // Release guard slot
+
+			// Filter for EXIF DateTime if it exists, otherwise ModTime
+			file, err := os.Open(filepath.Join(from, f.Name()))
 			if err != nil {
 				log.Fatal(err)
 			}
-			ti := exif.NewTagIndex()
-			_, index, err := exif.Collect(im, ti, rawExif)
-			if err != nil {
-				log.Fatal(err)
-			}
+			defer file.Close()
 
-			// Search for DateTimeOriginal tag
-			dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
+			var timestampValue time.Time
+			rawExif, err := exif.SearchAndExtractExifWithReader(file)
 			if err != nil {
-				fmt.Printf("%s: DateTimeOriginal not found (%s), using ModTime\n", f.Name(), err)
+				fmt.Printf("%s: No EXIF data found (%s), using ModTime\n", f.Name(), err)
 				timestampValue = f.ModTime().In(time.UTC)
 			} else {
-				fmt.Printf("%s: DateTimeOriginal = %s\n", f.Name(), dateTimeString)
-
-				layout := "2006:01:02 15:04:05"
-				timestampValue, err = time.Parse(layout, dateTimeString)
+				im, err := exifcommon.NewIfdMappingWithStandard()
+				if err != nil {
+					log.Fatal(err)
+				}
+				ti := exif.NewTagIndex()
+				_, index, err := exif.Collect(im, ti, rawExif)
 				if err != nil {
 					log.Fatal(err)
 				}
 
-				// Determine corresponding timezone from EXIF or use local timezone
-				// offsetString, err := findTagInAllIfds(&index, "OffsetTime")
-				// if err != nil {
-				// 	fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
-				// 	timestampValue = timestampValue.In(time.Local)
-				// } else {
-				// 	fmt.Printf("OffsetTime = %s\n", offsetString)
+				// Search for DateTimeOriginal tag
+				dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
+				if err != nil {
+					fmt.Printf("%s: DateTimeOriginal not found (%s), using ModTime\n", f.Name(), err)
+					timestampValue = f.ModTime().In(time.UTC)
+				} else {
+					fmt.Printf("%s: DateTimeOriginal = %s\n", f.Name(), dateTimeString)
 
-				// 	offsetSeconds, err := offsetToSeconds(offsetString)
-				// 	if err != nil {
-				// 		log.Fatal(err)
-				// 	}
-				// 	location := time.FixedZone("FixedZone", offsetSeconds)
-				// 	timestampValue = timestampValue.In(location)
-				// }
+					layout := "2006:01:02 15:04:05"
+					timestampValue, err = time.Parse(layout, dateTimeString)
+					if err != nil {
+						log.Fatal(err)
+					}
+
+					// Determine corresponding timezone from EXIF or use local timezone
+					// offsetString, err := findTagInAllIfds(&index, "OffsetTime")
+					// if err != nil {
+					// 	fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
+					// 	timestampValue = timestampValue.In(time.Local)
+					// } else {
+					// 	fmt.Printf("OffsetTime = %s\n", offsetString)
+
+					// 	offsetSeconds, err := offsetToSeconds(offsetString)
+					// 	if err != nil {
+					// 		log.Fatal(err)
+					// 	}
+					// 	location := time.FixedZone("FixedZone", offsetSeconds)
+					// 	timestampValue = timestampValue.In(location)
+					// }
+				}
 			}
-		}
 
-		i, _ := strconv.Atoi(timestampValue.Format("20060102"))
-		if uint(i) < start || uint(i) > end {
-			continue
-		}
+			i, _ := strconv.Atoi(timestampValue.Format("20060102"))
+			if uint(i) < start || uint(i) > end {
+				return
+			}
 
-		// Create folder if needed
-		timestamp := timestampValue.Format("2006-01-02")
-		folder := filepath.Join(to, timestamp+"-"+strings.ToLower(ext))
-		if value, err := pathExists(folder); value == false && err == nil {
-			fmt.Printf("Creating folder: %s\n", folder)
-			os.Mkdir(folder, 0755)
-		}
+			// Create folder if needed
+			timestamp := timestampValue.Format("2006-01-02")
+			folder := filepath.Join(to, timestamp+"-"+strings.ToLower(ext))
+			if value, err := pathExists(folder); value == false && err == nil {
+				fmt.Printf("Creating folder: %s\n", folder)
+				os.Mkdir(folder, 0755)
+			}
 
-		// Copy the file
-		fromFile := filepath.Join(from, f.Name())
-		toFile := filepath.Join(folder, f.Name())
-		fmt.Printf("Copying %s -> %s (%s)\n", fromFile, toFile, timestampValue)
-		err = copyFile(fromFile, toFile)
-		if err != nil {
-			fmt.Printf("Copy file failed: %q\n", err)
-		}
+			// Copy the file
+			fromFile := filepath.Join(from, f.Name())
+			toFile := filepath.Join(folder, f.Name())
+			fmt.Printf("Copying %s -> %s (%s)\n", fromFile, toFile, timestampValue)
+			err = copyFile(fromFile, toFile)
+			if err != nil {
+				fmt.Printf("Copy file failed: %q\n", err)
+			}
+		}(f, ext)
 	}
+
+	wg.Wait()
 }
