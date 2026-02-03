@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -68,48 +67,10 @@ func copyFileContents(src, dst string, mtime time.Time) (err error) {
 
 	// Update the timestamps
 	if err := os.Chtimes(dst, time.Now(), mtime); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	err = out.Sync()
 	return
-}
-
-// Return whether the given file or directory exists
-func pathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
-	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return true, err
-}
-
-// Convert an offset string to seconds
-func offsetToSeconds(offset string) (int, error) {
-	if len(offset) != 6 {
-		return 0, fmt.Errorf("Invalid offset format")
-	}
-
-	sign := 1
-	if offset[0] == '-' {
-		sign = -1
-	} else if offset[0] != '+' {
-		return 0, fmt.Errorf("Invalid offset format")
-	}
-
-	hours, err := strconv.Atoi(offset[1:3])
-	if err != nil {
-		return 0, err
-	}
-
-	minutes, err := strconv.Atoi(offset[4:6])
-	if err != nil {
-		return 0, err
-	}
-
-	return sign * (hours*3600 + minutes*60), nil
 }
 
 // Find a tag in all IFDs and return the value as a string
@@ -147,7 +108,7 @@ func main() {
 
 	// Read the source directory
 	fmt.Printf("Importing files from %s -> %s\n", from, to)
-	files, err := ioutil.ReadDir(from)
+	files, err := os.ReadDir(from)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -172,7 +133,12 @@ func main() {
 			continue
 		}
 
-		fileChan <- f
+		info, err := f.Info()
+		if err != nil {
+			fmt.Printf("Error getting info for %s: %v\n", f.Name(), err)
+			continue
+		}
+		fileChan <- info
 	}
 	close(fileChan)
 
@@ -188,7 +154,8 @@ func main() {
 			// Filter for EXIF DateTime if it exists, otherwise ModTime
 			file, err := os.Open(filepath.Join(from, f.Name()))
 			if err != nil {
-				log.Fatal(err)
+				fmt.Printf("%s: Error opening file: %v\n", f.Name(), err)
+				return
 			}
 			defer file.Close()
 
@@ -200,44 +167,50 @@ func main() {
 			} else {
 				im, err := exifcommon.NewIfdMappingWithStandard()
 				if err != nil {
-					log.Fatal(err)
-				}
-				ti := exif.NewTagIndex()
-				_, index, err := exif.Collect(im, ti, rawExif)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				// Search for DateTimeOriginal tag
-				dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
-				if err != nil {
-					fmt.Printf("%s: DateTimeOriginal not found (%s), using ModTime\n", f.Name(), err)
+					fmt.Printf("%s: Error creating IFD mapping: %v, using ModTime\n", f.Name(), err)
 					timestampValue = f.ModTime().In(time.UTC)
 				} else {
-					fmt.Printf("%s: DateTimeOriginal = %s\n", f.Name(), dateTimeString)
-
-					layout := "2006:01:02 15:04:05"
-					timestampValue, err = time.Parse(layout, dateTimeString)
+					ti := exif.NewTagIndex()
+					_, index, err := exif.Collect(im, ti, rawExif)
 					if err != nil {
-						log.Fatal(err)
+						fmt.Printf("%s: Error collecting EXIF: %v, using ModTime\n", f.Name(), err)
+						timestampValue = f.ModTime().In(time.UTC)
+					} else {
+						// Search for DateTimeOriginal tag
+						dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
+						if err != nil {
+							fmt.Printf("%s: DateTimeOriginal not found (%s), using ModTime\n", f.Name(), err)
+							timestampValue = f.ModTime().In(time.UTC)
+						} else {
+							fmt.Printf("%s: DateTimeOriginal = %s\n", f.Name(), dateTimeString)
+
+							layout := "2006:01:02 15:04:05"
+							timestampValue, err = time.Parse(layout, dateTimeString)
+							if err != nil {
+								fmt.Printf("%s: Error parsing DateTimeOriginal: %v, using ModTime\n", f.Name(), err)
+								timestampValue = f.ModTime().In(time.UTC)
+							}
+						}
 					}
-
-					// Determine corresponding timezone from EXIF or use local timezone
-					// offsetString, err := findTagInAllIfds(&index, "OffsetTime")
-					// if err != nil {
-					// 	fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
-					// 	timestampValue = timestampValue.In(time.Local)
-					// } else {
-					// 	fmt.Printf("OffsetTime = %s\n", offsetString)
-
-					// 	offsetSeconds, err := offsetToSeconds(offsetString)
-					// 	if err != nil {
-					// 		log.Fatal(err)
-					// 	}
-					// 	location := time.FixedZone("FixedZone", offsetSeconds)
-					// 	timestampValue = timestampValue.In(location)
-					// }
 				}
+
+				// Determine corresponding timezone from EXIF or use local timezone
+				// offsetString, err := findTagInAllIfds(&index, "OffsetTime")
+				// if err != nil {
+				// 	fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
+				// 	timestampValue = timestampValue.In(time.Local)
+				// } else {
+				// 	fmt.Printf("OffsetTime = %s\n", offsetString)
+
+				// 	offsetSeconds, err := offsetToSeconds(offsetString)
+				// 	if err != nil {
+				// 		fmt.Printf("%s: Error parsing offset: %v, using local\n", f.Name(), err)
+				// 		timestampValue = timestampValue.In(time.Local)
+				// 	} else {
+				// 		location := time.FixedZone("FixedZone", offsetSeconds)
+				// 		timestampValue = timestampValue.In(location)
+				// 	}
+				// }
 			}
 
 			i, _ := strconv.Atoi(timestampValue.Format("20060102"))
@@ -248,9 +221,9 @@ func main() {
 			// Create folder if needed
 			timestamp := timestampValue.Format("2006-01-02")
 			folder := filepath.Join(to, timestamp+"-"+strings.ToLower(ext))
-			if value, err := pathExists(folder); value == false && err == nil {
-				fmt.Printf("Creating folder: %s\n", folder)
-				os.Mkdir(folder, 0755)
+			if err := os.MkdirAll(folder, 0755); err != nil {
+				fmt.Printf("%s: Error creating folder %s: %v\n", f.Name(), folder, err)
+				return
 			}
 
 			// Copy the file
