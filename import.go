@@ -163,54 +163,50 @@ func main() {
 			rawExif, err := exif.SearchAndExtractExifWithReader(file)
 			if err != nil {
 				fmt.Printf("%s: No EXIF data found (%s), using ModTime\n", f.Name(), err)
-				timestampValue = f.ModTime().In(time.UTC)
+				timestampValue = f.ModTime()
 			} else {
 				im, err := exifcommon.NewIfdMappingWithStandard()
 				if err != nil {
 					fmt.Printf("%s: Error creating IFD mapping: %v, using ModTime\n", f.Name(), err)
-					timestampValue = f.ModTime().In(time.UTC)
+					timestampValue = f.ModTime()
 				} else {
 					ti := exif.NewTagIndex()
 					_, index, err := exif.Collect(im, ti, rawExif)
 					if err != nil {
 						fmt.Printf("%s: Error collecting EXIF: %v, using ModTime\n", f.Name(), err)
-						timestampValue = f.ModTime().In(time.UTC)
+						timestampValue = f.ModTime()
 					} else {
-						// Search for DateTimeOriginal tag
-						dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
-						if err != nil {
-							fmt.Printf("%s: DateTimeOriginal not found (%s), using ModTime\n", f.Name(), err)
-							timestampValue = f.ModTime().In(time.UTC)
-						} else {
-							fmt.Printf("%s: DateTimeOriginal = %s\n", f.Name(), dateTimeString)
+						// Search for DateTimeOriginal tag and potential offset tags
+						dateTimeString, dtErr := findTagInAllIfds(&index, "DateTimeOriginal")
+						offsetString, offErr := findTagInAllIfds(&index, "OffsetTimeOriginal")
+						if offErr != nil {
+							offsetString, _ = findTagInAllIfds(&index, "OffsetTime")
+						}
 
-							layout := "2006:01:02 15:04:05"
-							timestampValue, err = time.Parse(layout, dateTimeString)
-							if err != nil {
-								fmt.Printf("%s: Error parsing DateTimeOriginal: %v, using ModTime\n", f.Name(), err)
-								timestampValue = f.ModTime().In(time.UTC)
+						layout := "2006:01:02 15:04:05"
+						if dtErr == nil && dateTimeString != "" {
+							if offsetString != "" {
+								// Attempt to parse with timezone offset
+								timestampValue, err = time.Parse(layout+"-07:00", dateTimeString+offsetString)
+								if err != nil {
+									fmt.Printf("%s: Error parsing DateTimeOriginal with offset: %v\n", f.Name(), err)
+								}
 							}
+
+							// Fallback: parse as local time if no offset or if offset parsing failed
+							if timestampValue.IsZero() {
+								timestampValue, err = time.ParseInLocation(layout, dateTimeString, time.Local)
+								if err != nil {
+									fmt.Printf("%s: Error parsing DateTimeOriginal: %v, using ModTime\n", f.Name(), err)
+									timestampValue = f.ModTime()
+								}
+							}
+						} else {
+							fmt.Printf("%s: DateTimeOriginal not found, using ModTime\n", f.Name())
+							timestampValue = f.ModTime()
 						}
 					}
 				}
-
-				// Determine corresponding timezone from EXIF or use local timezone
-				// offsetString, err := findTagInAllIfds(&index, "OffsetTime")
-				// if err != nil {
-				// 	fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
-				// 	timestampValue = timestampValue.In(time.Local)
-				// } else {
-				// 	fmt.Printf("OffsetTime = %s\n", offsetString)
-
-				// 	offsetSeconds, err := offsetToSeconds(offsetString)
-				// 	if err != nil {
-				// 		fmt.Printf("%s: Error parsing offset: %v, using local\n", f.Name(), err)
-				// 		timestampValue = timestampValue.In(time.Local)
-				// 	} else {
-				// 		location := time.FixedZone("FixedZone", offsetSeconds)
-				// 		timestampValue = timestampValue.In(location)
-				// 	}
-				// }
 			}
 
 			i, _ := strconv.Atoi(timestampValue.Format("20060102"))
