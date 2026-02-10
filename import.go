@@ -14,6 +14,7 @@ import (
 
 	"github.com/dsoprea/go-exif/v3"
 	exifcommon "github.com/dsoprea/go-exif/v3/common"
+	"github.com/evanoberholster/imagemeta"
 )
 
 // Copy a file from src to dst
@@ -160,57 +161,64 @@ func main() {
 			defer file.Close()
 
 			var timestampValue time.Time
+			var dateTimeString, offsetString string
+			var dtErr, offErr error
+
+			// 1. Try standard EXIF extraction (works for JPEG, TIFF, CR2, etc.)
 			rawExif, err := exif.SearchAndExtractExifWithReader(file)
-			if err != nil {
-				fmt.Printf("%s: No EXIF data found (%s), using ModTime\n", f.Name(), err)
-				timestampValue = f.ModTime().In(time.UTC)
-			} else {
+			if err == nil {
 				im, err := exifcommon.NewIfdMappingWithStandard()
-				if err != nil {
-					fmt.Printf("%s: Error creating IFD mapping: %v, using ModTime\n", f.Name(), err)
-					timestampValue = f.ModTime().In(time.UTC)
-				} else {
+				if err == nil {
 					ti := exif.NewTagIndex()
 					_, index, err := exif.Collect(im, ti, rawExif)
-					if err != nil {
-						fmt.Printf("%s: Error collecting EXIF: %v, using ModTime\n", f.Name(), err)
-						timestampValue = f.ModTime().In(time.UTC)
-					} else {
-						// Search for DateTimeOriginal tag
-						dateTimeString, err := findTagInAllIfds(&index, "DateTimeOriginal")
-						if err != nil {
-							fmt.Printf("%s: DateTimeOriginal not found (%s), using ModTime\n", f.Name(), err)
-							timestampValue = f.ModTime().In(time.UTC)
-						} else {
-							fmt.Printf("%s: DateTimeOriginal = %s\n", f.Name(), dateTimeString)
-
-							layout := "2006:01:02 15:04:05"
-							timestampValue, err = time.Parse(layout, dateTimeString)
-							if err != nil {
-								fmt.Printf("%s: Error parsing DateTimeOriginal: %v, using ModTime\n", f.Name(), err)
-								timestampValue = f.ModTime().In(time.UTC)
-							}
+					if err == nil {
+						dateTimeString, dtErr = findTagInAllIfds(&index, "DateTimeOriginal")
+						offsetString, offErr = findTagInAllIfds(&index, "OffsetTimeOriginal")
+						if offErr != nil {
+							offsetString, _ = findTagInAllIfds(&index, "OffsetTime")
 						}
 					}
 				}
+			}
 
-				// Determine corresponding timezone from EXIF or use local timezone
-				// offsetString, err := findTagInAllIfds(&index, "OffsetTime")
-				// if err != nil {
-				// 	fmt.Printf("OffsetTime - tag not found (%s), using Local\n", err)
-				// 	timestampValue = timestampValue.In(time.Local)
-				// } else {
-				// 	fmt.Printf("OffsetTime = %s\n", offsetString)
+			// 2. Fallback for CR3 and other formats using imagemeta
+			if dtErr != nil || dateTimeString == "" {
+				file.Seek(0, 0)
+				md, err := imagemeta.DecodeCR3(file)
+				if err == nil {
+					// Imagemeta handles the extraction differently
+					timestampValue = md.DateTimeOriginal()
+				}
+			}
 
-				// 	offsetSeconds, err := offsetToSeconds(offsetString)
-				// 	if err != nil {
-				// 		fmt.Printf("%s: Error parsing offset: %v, using local\n", f.Name(), err)
-				// 		timestampValue = timestampValue.In(time.Local)
-				// 	} else {
-				// 		location := time.FixedZone("FixedZone", offsetSeconds)
-				// 		timestampValue = timestampValue.In(location)
-				// 	}
-				// }
+			// 3. Process the extracted strings with our timezone logic
+			if timestampValue.IsZero() && dateTimeString != "" {
+				layout := "2006:01:02 15:04:05"
+				if offsetString != "" {
+					// Attempt to parse with timezone offset
+					timestampValue, err = time.Parse(layout+"-07:00", dateTimeString+offsetString)
+					if err != nil {
+						fmt.Printf("%s: Error parsing DateTimeOriginal with offset: %v\n", f.Name(), err)
+					}
+				}
+
+				// Fallback: parse as local time if no offset or if offset parsing failed
+				if timestampValue.IsZero() {
+					timestampValue, err = time.ParseInLocation(layout, dateTimeString, time.Local)
+					if err != nil {
+						fmt.Printf("%s: Error parsing DateTimeOriginal: %v\n", f.Name(), err)
+					}
+				}
+			}
+
+			// 4. Final fallback to ModTime
+			if timestampValue.IsZero() {
+				if dtErr != nil || dateTimeString == "" {
+					fmt.Printf("%s: No EXIF data found, using ModTime\n", f.Name())
+				} else {
+					fmt.Printf("%s: Failed to parse EXIF, using ModTime\n", f.Name())
+				}
+				timestampValue = f.ModTime()
 			}
 
 			i, _ := strconv.Atoi(timestampValue.Format("20060102"))
