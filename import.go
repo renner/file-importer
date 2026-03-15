@@ -232,6 +232,8 @@ func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
 	var (
 		mu      sync.Mutex
 		summary importSummary
+		current string
+		total   int
 	)
 	logf := func(format string, args ...any) {
 		mu.Lock()
@@ -248,6 +250,7 @@ func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
 			for fi := range jobs {
 				mu.Lock()
 				summary.processed++
+				current = fi.Name()
 				mu.Unlock()
 
 				timestamp := resolveTimestamp(filepath.Join(cfg.From, fi.Name()), fi, logf)
@@ -274,6 +277,7 @@ func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
 		}()
 	}
 
+	var infos []os.FileInfo
 	for _, f := range files {
 		if f.IsDir() {
 			continue
@@ -290,10 +294,90 @@ func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
 			mu.Unlock()
 			continue
 		}
+		infos = append(infos, info)
+	}
+
+	total = len(infos)
+	progressDone := make(chan struct{})
+	var progressWg sync.WaitGroup
+	if total > 0 {
+		progressWg.Add(1)
+		go func() {
+			defer progressWg.Done()
+			frames := []byte{'|', '/', '-', '\\'}
+			frameIdx := 0
+			ticker := time.NewTicker(200 * time.Millisecond)
+			defer ticker.Stop()
+
+			truncate := func(s string, max int) string {
+				if len(s) <= max {
+					return s
+				}
+				if max <= 3 {
+					return s[:max]
+				}
+				return "..." + s[len(s)-(max-3):]
+			}
+
+			for {
+				select {
+				case <-ticker.C:
+					mu.Lock()
+					p := summary.processed
+					c := summary.copied
+					s := summary.skipped
+					f := summary.failed
+					name := current
+					t := total
+					mu.Unlock()
+
+					if p > t {
+						p = t
+					}
+					line := fmt.Sprintf(
+						"\r%c Checking %d/%d (copied %d, skipped %d, failed %d)",
+						frames[frameIdx%len(frames)],
+						p,
+						t,
+						c,
+						s,
+						f,
+					)
+					if name != "" {
+						line += " " + truncate(name, 48)
+					}
+					fmt.Fprint(os.Stderr, line)
+					frameIdx++
+				case <-progressDone:
+					mu.Lock()
+					p := summary.processed
+					c := summary.copied
+					s := summary.skipped
+					f := summary.failed
+					t := total
+					mu.Unlock()
+					fmt.Fprintf(
+						os.Stderr,
+						"\rDone checking %d/%d (copied %d, skipped %d, failed %d)\n",
+						p,
+						t,
+						c,
+						s,
+						f,
+					)
+					return
+				}
+			}
+		}()
+	}
+
+	for _, info := range infos {
 		jobs <- info
 	}
 	close(jobs)
 	wg.Wait()
+	close(progressDone)
+	progressWg.Wait()
 
 	fmt.Fprintf(
 		out,
