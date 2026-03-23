@@ -193,3 +193,81 @@ func TestRunImportWritesProgressToDedicatedWriter(t *testing.T) {
 		t.Fatalf("expected progress output in dedicated writer, got: %q", progress.String())
 	}
 }
+
+func TestRunImportDoesNotWriteProgressWhenDisabled(t *testing.T) {
+	root := t.TempDir()
+	from := filepath.Join(root, "from")
+	to := filepath.Join(root, "to")
+	if err := os.MkdirAll(from, 0o755); err != nil {
+		t.Fatalf("mkdir from failed: %v", err)
+	}
+	if err := os.MkdirAll(to, 0o755); err != nil {
+		t.Fatalf("mkdir to failed: %v", err)
+	}
+
+	src := filepath.Join(from, "quiet.jpg")
+	mustWriteFile(t, src, "quiet content")
+	mustSetMtime(t, src, time.Date(2024, 7, 8, 9, 10, 11, 0, time.UTC))
+
+	cfg := importConfig{
+		From:       from,
+		To:         to,
+		Filter:     "jpg",
+		Start:      20240708,
+		End:        20240708,
+		MaxWorkers: 1,
+	}
+
+	var out bytes.Buffer
+	summary, err := runImport(cfg, &out, nil)
+	if err != nil {
+		t.Fatalf("runImport returned error: %v\noutput:\n%s", err, out.String())
+	}
+	if summary.copied != 1 {
+		t.Fatalf("expected copied=1, got: %d", summary.copied)
+	}
+	if strings.Contains(out.String(), "Done checking") {
+		t.Fatalf("expected no progress output in main output when progress is disabled, got: %q", out.String())
+	}
+}
+
+func TestRunImportLeavesProgressWriterEmptyWhenNoFilesMatch(t *testing.T) {
+	root := t.TempDir()
+	from := filepath.Join(root, "from")
+	to := filepath.Join(root, "to")
+	if err := os.MkdirAll(from, 0o755); err != nil {
+		t.Fatalf("mkdir from failed: %v", err)
+	}
+	if err := os.MkdirAll(to, 0o755); err != nil {
+		t.Fatalf("mkdir to failed: %v", err)
+	}
+
+	src := filepath.Join(from, "ignored.txt")
+	mustWriteFile(t, src, "ignored content")
+	mustSetMtime(t, src, time.Date(2024, 7, 8, 9, 10, 11, 0, time.UTC))
+
+	cfg := importConfig{
+		From:       from,
+		To:         to,
+		Filter:     "jpg",
+		Start:      20240708,
+		End:        20240708,
+		MaxWorkers: 1,
+	}
+
+	var out bytes.Buffer
+	var progress bytes.Buffer
+	summary, err := runImport(cfg, &out, &progress)
+	if err != nil {
+		t.Fatalf("runImport returned error: %v\noutput:\n%s", err, out.String())
+	}
+	if summary.processed != 0 || summary.copied != 0 || summary.skipped != 0 || summary.failed != 0 {
+		t.Fatalf("expected empty summary, got: %+v", summary)
+	}
+	if progress.Len() != 0 {
+		t.Fatalf("expected no progress output when no files match, got: %q", progress.String())
+	}
+	if !strings.Contains(out.String(), "Done. processed=0 copied=0 skipped=0 failed=0") {
+		t.Fatalf("expected final summary in main output, got: %q", out.String())
+	}
+}
