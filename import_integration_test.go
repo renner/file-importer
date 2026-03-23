@@ -65,7 +65,7 @@ func TestRunImportAppliesFilterAndDateRange(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	summary, err := runImport(cfg, &out)
+	summary, err := runImport(cfg, &out, nil)
 	if err != nil {
 		t.Fatalf("runImport returned error: %v\noutput:\n%s", err, out.String())
 	}
@@ -124,7 +124,7 @@ func TestRunImportNormalizesExtensionFolderName(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	summary, err := runImport(cfg, &out)
+	summary, err := runImport(cfg, &out, nil)
 	if err != nil {
 		t.Fatalf("runImport returned error: %v\noutput:\n%s", err, out.String())
 	}
@@ -147,8 +147,49 @@ func TestRunImportReturnsErrorForMissingSourceDir(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	_, err := runImport(cfg, &out)
+	_, err := runImport(cfg, &out, nil)
 	if err == nil {
 		t.Fatal("expected error for missing source directory")
+	}
+}
+
+func TestRunImportWritesProgressToDedicatedWriter(t *testing.T) {
+	root := t.TempDir()
+	from := filepath.Join(root, "from")
+	to := filepath.Join(root, "to")
+	if err := os.MkdirAll(from, 0o755); err != nil {
+		t.Fatalf("mkdir from failed: %v", err)
+	}
+	if err := os.MkdirAll(to, 0o755); err != nil {
+		t.Fatalf("mkdir to failed: %v", err)
+	}
+
+	src := filepath.Join(from, "progress.jpg")
+	mustWriteFile(t, src, "progress content")
+	mustSetMtime(t, src, time.Date(2024, 7, 8, 9, 10, 11, 0, time.UTC))
+
+	cfg := importConfig{
+		From:       from,
+		To:         to,
+		Filter:     "jpg",
+		Start:      20240708,
+		End:        20240708,
+		MaxWorkers: 1,
+	}
+
+	var out bytes.Buffer
+	var progress bytes.Buffer
+	summary, err := runImport(cfg, &out, &progress)
+	if err != nil {
+		t.Fatalf("runImport returned error: %v\noutput:\n%s", err, out.String())
+	}
+	if summary.copied != 1 {
+		t.Fatalf("expected copied=1, got: %d", summary.copied)
+	}
+	if strings.Contains(out.String(), "Done checking") {
+		t.Fatalf("expected progress output to stay out of main output, got: %q", out.String())
+	}
+	if !strings.Contains(progress.String(), "Done checking 1/1") {
+		t.Fatalf("expected progress output in dedicated writer, got: %q", progress.String())
 	}
 }

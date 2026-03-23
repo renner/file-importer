@@ -221,7 +221,7 @@ func processFile(cfg importConfig, fi os.FileInfo, timestamp time.Time, logf fun
 	return nil
 }
 
-func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
+func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error) {
 	files, err := os.ReadDir(cfg.From)
 	if err != nil {
 		return importSummary{}, err
@@ -300,7 +300,7 @@ func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
 	total = len(infos)
 	progressDone := make(chan struct{})
 	var progressWg sync.WaitGroup
-	if total > 0 {
+	if total > 0 && progress != nil {
 		progressWg.Add(1)
 		go func() {
 			defer progressWg.Done()
@@ -346,7 +346,7 @@ func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
 					if name != "" {
 						line += " " + truncate(name, 48)
 					}
-					fmt.Fprint(os.Stderr, line)
+					fmt.Fprint(progress, line)
 					frameIdx++
 				case <-progressDone:
 					mu.Lock()
@@ -357,7 +357,7 @@ func runImport(cfg importConfig, out io.Writer) (importSummary, error) {
 					t := total
 					mu.Unlock()
 					fmt.Fprintf(
-						os.Stderr,
+						progress,
 						"\rDone checking %d/%d (copied %d, skipped %d, failed %d)\n",
 						p,
 						t,
@@ -400,7 +400,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(2)
 	}
-	if _, err := runImport(cfg, os.Stdout); err != nil {
+	if _, err := runImport(cfg, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
