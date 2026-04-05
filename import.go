@@ -238,6 +238,8 @@ func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error)
 	logf := func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
+		// Clear the current spinner line so the log prints on a clean line
+		fmt.Fprint(os.Stderr, "\r\033[2K")
 		fmt.Fprintf(out, format+"\n", args...)
 	}
 
@@ -335,7 +337,7 @@ func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error)
 						p = t
 					}
 					line := fmt.Sprintf(
-						"\r%c Checking %d/%d (copied %d, skipped %d, failed %d)",
+						"\r\033[2K%c Checking %d/%d (copied %d, skipped %d, failed %d)",
 						frames[frameIdx%len(frames)],
 						p,
 						t,
@@ -358,7 +360,7 @@ func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error)
 					mu.Unlock()
 					fmt.Fprintf(
 						progress,
-						"\rDone checking %d/%d (copied %d, skipped %d, failed %d)\n",
+						"\r\033[2KDone checking %d/%d (copied %d, skipped %d, failed %d)\n",
 						p,
 						t,
 						c,
