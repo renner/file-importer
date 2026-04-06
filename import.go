@@ -23,6 +23,7 @@ type importConfig struct {
 	Start      uint
 	End        uint
 	MaxWorkers int
+	UseModTime bool
 }
 
 type importSummary struct {
@@ -120,6 +121,7 @@ func parseFlags(args []string) (importConfig, error) {
 	fs.UintVar(&cfg.Start, "start", uint(0), "Start date")
 	fs.UintVar(&cfg.End, "end", ^uint(0), "End date")
 	fs.IntVar(&cfg.MaxWorkers, "workers", 10, "Maximum number of concurrent workers")
+	fs.BoolVar(&cfg.UseModTime, "fast", false, "Use filesystem modtime instead of parsing EXIF/CR3 to massively increase speed")
 	if err := fs.Parse(args); err != nil {
 		return importConfig{}, err
 	}
@@ -257,7 +259,12 @@ func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error)
 				current = fi.Name()
 				mu.Unlock()
 
-				timestamp := resolveTimestamp(filepath.Join(cfg.From, fi.Name()), fi, logf)
+				var timestamp time.Time
+				if cfg.UseModTime {
+					timestamp = fi.ModTime()
+				} else {
+					timestamp = resolveTimestamp(filepath.Join(cfg.From, fi.Name()), fi, logf)
+				}
 				i, _ := strconv.Atoi(timestamp.Format("20060102"))
 				if uint(i) < cfg.Start || uint(i) > cfg.End {
 					mu.Lock()
