@@ -274,3 +274,63 @@ func TestRunImportLeavesProgressWriterEmptyWhenNoFilesMatch(t *testing.T) {
 		t.Fatalf("expected final summary in main output, got: %q", out.String())
 	}
 }
+
+func TestParseFlagsSetsUseModTime(t *testing.T) {
+	cfg, err := parseFlags([]string{"--from", "/src", "--to", "/dst", "--fast"})
+	if err != nil {
+		t.Fatalf("parseFlags returned error: %v", err)
+	}
+	if !cfg.UseModTime {
+		t.Fatalf("expected UseModTime to be true when --fast is provided")
+	}
+}
+
+func TestRunImportBypassesExifWithFastFlag(t *testing.T) {
+	root := t.TempDir()
+	from := filepath.Join(root, "from")
+	to := filepath.Join(root, "to")
+	if err := os.MkdirAll(from, 0o755); err != nil {
+		t.Fatalf("mkdir from failed: %v", err)
+	}
+
+	src := filepath.Join(from, "fake_image.jpg")
+	mustWriteFile(t, src, "this is not a real jpeg")
+	mtime := time.Date(2024, 7, 8, 9, 10, 11, 0, time.UTC)
+	mustSetMtime(t, src, mtime)
+
+	cfg := importConfig{
+		From:       from,
+		To:         to,
+		Start:      0,
+		End:        20250101,
+		MaxWorkers: 1,
+	}
+
+	// 1. Run without --fast (Should attempt EXIF and log the fallback)
+	var outSlow bytes.Buffer
+	cfg.UseModTime = false
+	_, err := runImport(cfg, &outSlow, nil)
+	if err != nil {
+		t.Fatalf("runImport returned error: %v", err)
+	}
+	if !strings.Contains(outSlow.String(), "no EXIF data found, using ModTime") {
+		t.Fatalf("expected standard run to complain about missing EXIF data, but got: %s", outSlow.String())
+	}
+
+	// Clean the target folder for the next test
+	os.RemoveAll(to)
+	if err := os.MkdirAll(to, 0o755); err != nil {
+		t.Fatalf("mkdir to failed: %v", err)
+	}
+
+	// 2. Run with --fast (Should silently bypass EXIF and immediately use ModTime)
+	var outFast bytes.Buffer
+	cfg.UseModTime = true
+	_, err = runImport(cfg, &outFast, nil)
+	if err != nil {
+		t.Fatalf("runImport returned error: %v", err)
+	}
+	if strings.Contains(outFast.String(), "no EXIF data found, using ModTime") {
+		t.Fatalf("expected --fast run to bypass EXIF parsing completely, but got EXIF logs: %s", outFast.String())
+	}
+}
