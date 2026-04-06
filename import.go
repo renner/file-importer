@@ -239,7 +239,9 @@ func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error)
 		mu.Lock()
 		defer mu.Unlock()
 		// Clear the current spinner line so the log prints on a clean line
-		fmt.Fprint(os.Stderr, "\r\033[2K")
+		if progress != nil {
+			fmt.Fprint(progress, "\r\033[2K")
+		}
 		fmt.Fprintf(out, format+"\n", args...)
 	}
 

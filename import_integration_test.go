@@ -192,6 +192,9 @@ func TestRunImportWritesProgressToDedicatedWriter(t *testing.T) {
 	if !strings.Contains(progress.String(), "Done checking 1/1") {
 		t.Fatalf("expected progress output in dedicated writer, got: %q", progress.String())
 	}
+	if !strings.Contains(progress.String(), "\033[2K") {
+		t.Fatalf("expected ANSI clearing sequence in progress output, got: %q", progress.String())
+	}
 }
 
 func TestRunImportDoesNotWriteProgressWhenDisabled(t *testing.T) {
