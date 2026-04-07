@@ -32,6 +32,34 @@ func TestParseFlagsRejectsInvalidWorkers(t *testing.T) {
 	}
 }
 
+func TestParseFlagsParsesValidDates(t *testing.T) {
+	cfg, err := parseFlags([]string{"--from", "/src", "--to", "/dst", "--start", "2024-03-03", "--end", "2024-03-31"})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if cfg.Start.Year() != 2024 || cfg.Start.Month() != 3 || cfg.Start.Day() != 3 {
+		t.Fatalf("expected start 2024-03-03, got: %v", cfg.Start)
+	}
+	if cfg.End.Year() != 2024 || cfg.End.Month() != 3 || cfg.End.Day() != 31 {
+		t.Fatalf("expected end 2024-03-31, got: %v", cfg.End)
+	}
+	if cfg.End.Hour() != 23 || cfg.End.Minute() != 59 || cfg.End.Second() != 59 {
+		t.Fatalf("expected end time 23:59:59, got: %v", cfg.End)
+	}
+}
+
+func TestParseFlagsRejectsInvalidStartOrEnd(t *testing.T) {
+	_, err := parseFlags([]string{"--from", "/src", "--to", "/dst", "--start", "invalid"})
+	if err == nil || !strings.Contains(err.Error(), "invalid start date format") {
+		t.Fatalf("expected start date validation error, got: %v", err)
+	}
+
+	_, err = parseFlags([]string{"--from", "/src", "--to", "/dst", "--end", "2024-99-99"})
+	if err == nil || !strings.Contains(err.Error(), "invalid end date format") {
+		t.Fatalf("expected end date validation error, got: %v", err)
+	}
+}
+
 func TestRunImportAppliesFilterAndDateRange(t *testing.T) {
 	root := t.TempDir()
 	from := filepath.Join(root, "from")
@@ -59,8 +87,8 @@ func TestRunImportAppliesFilterAndDateRange(t *testing.T) {
 		From:       from,
 		To:         to,
 		Filter:     "jpg",
-		Start:      20240303,
-		End:        20240331,
+		Start:      time.Date(2024, 3, 3, 0, 0, 0, 0, time.UTC),
+		End:        time.Date(2024, 3, 31, 23, 59, 59, 0, time.UTC),
 		MaxWorkers: 2,
 	}
 
@@ -118,8 +146,8 @@ func TestRunImportNormalizesExtensionFolderName(t *testing.T) {
 		From:       from,
 		To:         to,
 		Filter:     "jpg",
-		Start:      20240708,
-		End:        20240708,
+		Start:      time.Date(2024, 7, 8, 0, 0, 0, 0, time.UTC),
+		End:        time.Date(2024, 7, 8, 23, 59, 59, 0, time.UTC),
 		MaxWorkers: 1,
 	}
 
@@ -172,8 +200,8 @@ func TestRunImportWritesProgressToDedicatedWriter(t *testing.T) {
 		From:       from,
 		To:         to,
 		Filter:     "jpg",
-		Start:      20240708,
-		End:        20240708,
+		Start:      time.Date(2024, 7, 8, 0, 0, 0, 0, time.UTC),
+		End:        time.Date(2024, 7, 8, 23, 59, 59, 0, time.UTC),
 		MaxWorkers: 1,
 	}
 
@@ -216,8 +244,8 @@ func TestRunImportDoesNotWriteProgressWhenDisabled(t *testing.T) {
 		From:       from,
 		To:         to,
 		Filter:     "jpg",
-		Start:      20240708,
-		End:        20240708,
+		Start:      time.Date(2024, 7, 8, 0, 0, 0, 0, time.UTC),
+		End:        time.Date(2024, 7, 8, 23, 59, 59, 0, time.UTC),
 		MaxWorkers: 1,
 	}
 
@@ -253,8 +281,8 @@ func TestRunImportLeavesProgressWriterEmptyWhenNoFilesMatch(t *testing.T) {
 		From:       from,
 		To:         to,
 		Filter:     "jpg",
-		Start:      20240708,
-		End:        20240708,
+		Start:      time.Date(2024, 7, 8, 0, 0, 0, 0, time.UTC),
+		End:        time.Date(2024, 7, 8, 23, 59, 59, 0, time.UTC),
 		MaxWorkers: 1,
 	}
 
@@ -301,8 +329,8 @@ func TestRunImportBypassesExifWithFastFlag(t *testing.T) {
 	cfg := importConfig{
 		From:       from,
 		To:         to,
-		Start:      0,
-		End:        20250101,
+		Start:      time.Time{}, // 0
+		End:        time.Date(2025, 1, 1, 23, 59, 59, 0, time.UTC), // 20250101
 		MaxWorkers: 1,
 	}
 
