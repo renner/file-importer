@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +19,8 @@ type importConfig struct {
 	From       string
 	To         string
 	Filter     string
-	Start      uint
-	End        uint
+	Start      time.Time
+	End        time.Time
 	MaxWorkers int
 	UseModTime bool
 }
@@ -114,16 +113,33 @@ func findTagInAllIfds(index *exif.IfdIndex, tagName string) (string, error) {
 
 func parseFlags(args []string) (importConfig, error) {
 	var cfg importConfig
+	var startStr, endStr string
 	fs := flag.NewFlagSet("file-importer", flag.ContinueOnError)
 	fs.StringVar(&cfg.From, "from", "", "Source path")
 	fs.StringVar(&cfg.To, "to", "", "Destination path")
 	fs.StringVar(&cfg.Filter, "filter", "", "Optional file type filter")
-	fs.UintVar(&cfg.Start, "start", uint(0), "Start date")
-	fs.UintVar(&cfg.End, "end", ^uint(0), "End date")
+	fs.StringVar(&startStr, "start", "", "Start date (format YYYY-MM-DD)")
+	fs.StringVar(&endStr, "end", "", "End date (format YYYY-MM-DD)")
 	fs.IntVar(&cfg.MaxWorkers, "workers", 10, "Maximum number of concurrent workers")
 	fs.BoolVar(&cfg.UseModTime, "fast", false, "Use filesystem modtime instead of parsing EXIF/CR3 to massively increase speed")
 	if err := fs.Parse(args); err != nil {
 		return importConfig{}, err
+	}
+	if startStr != "" {
+		startDay, err := time.ParseInLocation("2006-01-02", startStr, time.Local)
+		if err != nil {
+			return importConfig{}, fmt.Errorf("invalid start date format (use YYYY-MM-DD): %w", err)
+		}
+		cfg.Start = startDay
+	}
+	if endStr != "" {
+		endDay, err := time.ParseInLocation("2006-01-02", endStr, time.Local)
+		if err != nil {
+			return importConfig{}, fmt.Errorf("invalid end date format (use YYYY-MM-DD): %w", err)
+		}
+		cfg.End = endDay.AddDate(0, 0, 1).Add(-time.Nanosecond)
+	} else {
+		cfg.End = time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 	}
 	if cfg.From == "" || cfg.To == "" {
 		return importConfig{}, fmt.Errorf("need source and target directory (use '--from' and '--to')")
@@ -265,8 +281,7 @@ func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error)
 				} else {
 					timestamp = resolveTimestamp(filepath.Join(cfg.From, fi.Name()), fi, logf)
 				}
-				i, _ := strconv.Atoi(timestamp.Format("20060102"))
-				if uint(i) < cfg.Start || uint(i) > cfg.End {
+				if timestamp.Before(cfg.Start) || timestamp.After(cfg.End) {
 					mu.Lock()
 					summary.skipped++
 					mu.Unlock()
