@@ -232,7 +232,7 @@ func processFile(cfg importConfig, fi os.FileInfo, timestamp time.Time, logf fun
 
 	fromFile := filepath.Join(cfg.From, fi.Name())
 	toFile := filepath.Join(folder, fi.Name())
-	logf("Copying %s -> %s (%s)", fromFile, toFile, timestamp)
+	logf("Copying %s -> %s/ (%s)", fi.Name(), filepath.Base(folder), timestamp.Format("2006-01-02 15:04:05"))
 	if err := copyFile(fromFile, toFile); err != nil {
 		return fmt.Errorf("%s: copy failed: %w", fi.Name(), err)
 	}
@@ -375,22 +375,7 @@ func runImport(cfg importConfig, out, progress io.Writer) (importSummary, error)
 					fmt.Fprint(progress, line)
 					frameIdx++
 				case <-progressDone:
-					mu.Lock()
-					p := summary.processed
-					c := summary.copied
-					s := summary.skipped
-					f := summary.failed
-					t := total
-					mu.Unlock()
-					fmt.Fprintf(
-						progress,
-						"\r\033[2KDone checking %d/%d (copied %d, skipped %d, failed %d)\n",
-						p,
-						t,
-						c,
-						s,
-						f,
-					)
+					fmt.Fprint(progress, "\r\033[2K")
 					return
 				}
 			}
